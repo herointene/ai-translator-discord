@@ -98,7 +98,15 @@ def detect_language_instruction(content: str) -> Tuple[str, Optional[str]]:
         match = re.match(pattern, content, re.IGNORECASE)
         if match:
             lang_name = match.group(1).strip().lower()
-            target_lang = LANGUAGE_MAP.get(lang_name)
+            # Try to map language name to code
+            target_lang = None
+            for name, code in LANGUAGE_MAP.items():
+                if name in lang_name:
+                    target_lang = code
+                    break
+            
+            if not target_lang:
+                target_lang = LANGUAGE_MAP.get(lang_name)
             
             # Remove the instruction from content
             cleaned_content = content[match.end():].strip()
@@ -184,6 +192,12 @@ Relevant conversation context:
         context_section = ""
     
     # Language instruction
+    # Detect target language from instruction
+    cleaned_content, instructed_lang = detect_language_instruction(message_content)
+    if instructed_lang:
+        target_language = instructed_lang
+        message_content = cleaned_content
+    
     if target_language:
         lang_names = {
             "zh": "Chinese (Simplified)",
@@ -200,9 +214,9 @@ Relevant conversation context:
             "ar": "Arabic",
         }
         lang_name = lang_names.get(target_language, target_language)
-        lang_instruction = f"Translate the following message into {lang_name}."
+        lang_instruction = f"IMPORTANT: You MUST translate the message ONLY into {lang_name}. Do NOT translate into English unless specifically asked."
     else:
-        lang_instruction = "Detect the source language and translate into English (or keep as English if already in English). If the message content starts with a specific translation instruction like '翻译为日语' or 'Translate to Japanese', prioritize and follow that instruction."
+        lang_instruction = "Detect the source language and translate into English (or keep as English if already in English)."
     
     prompt = f"""You are an expert translator with deep cultural and linguistic knowledge.
 
@@ -211,28 +225,14 @@ Relevant conversation context:
 Message to translate:
 "{message_content}"
 {context_section}
-Provide an enhanced translation with the following sections:
+Provide the translation. If the message or context implies a specific target language, prioritize it.
 
-[Translation]
-Provide the direct translation here. Maintain the original formatting (line breaks, emojis, etc.).
+If you feel additional cultural context, term explanations, or tone nuances would significantly help the user understand the message, you may optionally provide them in these sections:
 
-[Context/Term Explanation]
-If the message contains:
-- Cultural references
-- Idioms or slang
-- Technical terms
-- Names or proper nouns
-- References to previous conversation topics
-Explain them briefly here. If nothing needs explanation, write "None".
+[Context/Term Explanation] (Optional)
+[Tone Notes] (Optional)
 
-[Tone Notes]
-Analyze and describe:
-- The overall tone (formal, casual, humorous, serious, sarcastic, etc.)
-- Any emotional subtext
-- Register (polite, friendly, professional, etc.)
-- Any nuances that might be lost in translation
-
-Format your response exactly with these section headers in brackets."""
+Otherwise, provide only the translation under a [Translation] header."""
     
     return prompt
 
