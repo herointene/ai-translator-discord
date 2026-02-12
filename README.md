@@ -3,42 +3,28 @@
 A smart, context-aware Discord translation bot powered by **MiMo-V2-Flash (Feb 2026)**.
 
 ## Features
-- **🌐 Reaction Trigger**: Simply react to any message with a globe emoji to translate it.
-- **Smart Context**: Unlike basic translators, this bot looks at recent messages in the same channel/thread to understand the conversation flow before translating.
-- **Topic Filtering**: Automatically filters out irrelevant side-chatter from the context to ensure high translation accuracy.
-- **Enhanced Output**: Provides more than just text. You get:
-  - **[Translation]**: The core translated message.
-  - **[Context/Terms]**: Explanations of slang, idioms, or technical terms.
-  - **[Tone Analysis]**: Insights into the speaker's original mood or intent.
-- **Persistent Memory**: Uses SQLite to keep track of message history even after restarts.
+- **Thread-Based Interaction**: Keeps channels clean by moving translations into dedicated discussion threads.
+- **Smart Context & Topic Filtering**: Analyzes recent messages to understand the conversation flow and filters out irrelevant chatter.
+- **AI Task Recognition**: Automatically switches from translation to task fulfillment (e.g., writing emails, summarizing) based on user intent.
+- **Resource Management**: Periodic database cleanup (TTL) and channel whitelisting support.
 
 ## Setup
 1. **Clone**: `git clone https://github.com/herointene/ai-translator-discord.git`
-2. **Config**: Fill in `.env` with your `DISCORD_TOKEN` and `MIMO_API_KEY`.
-3. **Deploy**: Run `docker-compose up -d`.
+2. **Config**: Fill in `.env` with:
+   - `DISCORD_TOKEN`: Your bot token.
+   - `MIMO_API_KEY`: MiMo-V2-Flash API key.
+   - `ALLOWED_CHANNELS`: (Optional) Comma-separated channel IDs to restrict the bot.
+3. **Deploy**: Run `docker compose up -d`.
 
 ---
 
 # AI-TRANSLATOR-DISCORD (for Agents) 🤖
 
-**Project Nature**: Discord Gateway Listener (Python) + LLM Integration.
+**Project Nature**: Discord Gateway Listener (Python) + LLM Task Processor.
 
 ## Technical Specs
-- **Runtime**: Python 3.12 (Asynchronous via `discord.py`).
-- **Engine**: MiMo-V2-Flash API (Base URL configurable via ENV).
-- **Data Layer**: SQLite3 with thread-local connections.
-- **Persistence**: Mounted via Docker volumes at `/app/data/`.
-- **Logic Flow**:
-  1. `on_message` -> Save to DB.
-  2. `on_raw_reaction_add` (🌐) -> Trigger.
-  3. `translator.filter_context_with_ai` -> Semantic pruning of 10-message window.
-  4. `translator.translate_with_context` -> Structured LLM prompt with tone & term extraction.
-  5. `bot.py` -> Send Discord Embed.
-
-## Critical Paths
-- **Context Management**: `database.py` handles thread/channel isolation.
-- **Instruction Override**: AI is instructed to prioritize language requests found at the start of message strings (e.g., "Translate to Japanese: ...").
-- **Error Handling**: Graceful fallback to raw translation if context filtering fails.
-
-## Deployment Strategy
-Standard `docker-compose` orchestration. Ensure `known_hosts` is handled externally if deploying on read-only environments like starsoup.
+- **Runtime**: Python 3.12 (Asynchronous `discord.py`).
+- **Engine**: MiMo-V2-Flash (OpenAI-compatible).
+- **Data Layer**: SQLite3 with 7-day TTL cleanup task.
+- **Interaction Model**: `on_raw_reaction_add` (🌐) -> `message.create_thread` -> Task/Translation output.
+- **Channel Restriction**: Controlled via `ALLOWED_CHANNELS` environment variable.
