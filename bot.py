@@ -7,7 +7,7 @@ Features:
 - Saves all messages to SQLite database for context
 - Listens for 🌐 reaction to trigger translation
 - Retrieves relevant context from database
-- Placeholder for Topic Filtering (to be refined in Task 4)
+- AI-powered topic filtering and enhanced translation
 """
 
 import os
@@ -19,6 +19,7 @@ import discord
 from discord.ext import commands
 
 from database import db, save_message, get_relevant_context, get_message
+from translator import translate_with_context, TranslationError
 
 
 # Configuration from environment variables
@@ -132,8 +133,9 @@ class AITranslatorBot(commands.Bot):
         Steps:
         1. Fetch the message to be translated
         2. Retrieve recent context from database
-        3. Apply topic filtering (placeholder for Task 4)
-        4. Send translation result
+        3. Apply AI-based topic filtering
+        4. Call translation API with enhanced output
+        5. Send formatted translation response
         """
         try:
             # Get the channel
@@ -162,13 +164,19 @@ class AITranslatorBot(commands.Bot):
             raw_context = get_relevant_context(str(message.id), limit=10)
             print(f"[Bot] Retrieved {len(raw_context)} raw context messages")
             
-            # Step 2: Apply topic filtering (placeholder for Task 4)
-            # This will be refined in Task 4 with actual AI-based filtering
-            filtered_context = await self._filter_context_by_topic(message.content, raw_context)
+            # Step 2: Apply AI-based topic filtering and translation
+            translation_result = await translate_with_context(
+                message.content,
+                raw_context
+            )
             
-            # Step 3: Send acknowledgment (placeholder translation)
-            # Full translation logic will be implemented in Task 4
-            await self._send_translation_response(channel, message, filtered_context, user)
+            # Step 3: Send the enhanced translation response
+            await self._send_translation_response(
+                channel, 
+                message, 
+                translation_result, 
+                user
+            )
             
         except Exception as e:
             print(f"[Bot] Error handling translation request: {e}")
@@ -181,15 +189,10 @@ class AITranslatorBot(commands.Bot):
         raw_context: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
-        Filter context messages to keep only topic-relevant ones.
+        Filter context messages using AI semantic analysis.
         
-        This is a placeholder implementation for Task 3.
-        In Task 4, this will be enhanced with AI-based semantic filtering
-        using MiMo-V2 or Kimi API.
-        
-        Current simple logic:
-        - Returns all context (no filtering yet)
-        - Logs the filtering attempt for debugging
+        This method calls the translator module's AI-based filtering
+        to identify semantically relevant context messages.
         
         Args:
             target_content: The message content to translate
@@ -198,89 +201,119 @@ class AITranslatorBot(commands.Bot):
         Returns:
             Filtered list of relevant context messages
         """
+        from translator import filter_context_with_ai
+        
+        print(f"[TopicFilter] Filtering {len(raw_context)} messages for relevance...")
         print(f"[TopicFilter] Target message: {target_content[:100]}...")
-        print(f"[TopicFilter] Raw context count: {len(raw_context)}")
         
-        # Placeholder: Return all context for now
-        # TODO: Implement AI-based topic filtering in Task 4
-        # The AI will analyze the target message and context to:
-        # 1. Identify the main topic of the target message
-        # 2. Score each context message for relevance
-        # 3. Return only messages above a relevance threshold
+        filtered = await filter_context_with_ai(target_content, raw_context)
         
-        if raw_context:
-            print(f"[TopicFilter] Context preview (last 3):")
-            for ctx in raw_context[-3:]:
+        print(f"[TopicFilter] Retained {len(filtered)} relevant messages")
+        if filtered:
+            print(f"[TopicFilter] Relevant context:")
+            for ctx in filtered:
                 print(f"  - {ctx['user_name']}: {ctx['content'][:50]}...")
         
-        # For now, return all context messages
-        # This maintains conversation flow while we develop the AI filter
-        return raw_context
+        return filtered
     
     async def _send_translation_response(
         self,
         channel: discord.TextChannel,
         message: discord.Message,
-        context: List[Dict[str, Any]],
+        translation_result: Dict[str, Any],
         requesting_user: Optional[discord.User]
     ):
         """
-        Send translation response to the channel.
+        Send enhanced translation response to the channel.
         
-        This is a placeholder implementation. In Task 4, this will:
-        1. Call the translation API with context
-        2. Format the response with translation + explanation
-        3. Handle language detection and instruction parsing
+        Displays the translation with context explanation and tone analysis.
         """
-        # Create a simple acknowledgment embed
+        # Check for errors
+        if translation_result.get("error"):
+            error_embed = discord.Embed(
+                title="❌ Translation Error",
+                description=f"Failed to translate message: {translation_result['error']}",
+                color=0xe74c3c,
+                timestamp=datetime.now()
+            )
+            error_embed.add_field(
+                name="Original Message",
+                value=message.content[:1024] if message.content else "*No text content*",
+                inline=False
+            )
+            await channel.send(embed=error_embed)
+            return
+        
+        # Create the main translation embed
         embed = discord.Embed(
-            title="🌐 Translation Request Received",
-            description=f"Translation for message from {message.author.display_name}",
+            title="🌐 Translation",
             color=0x3498db,
             timestamp=datetime.now()
         )
         
-        # Add the original message content
+        # Add original message info
         embed.add_field(
-            name="Original Message",
-            value=message.content[:1024] if message.content else "*No text content*",
+            name=f"💬 Original ({message.author.display_name})",
+            value=translation_result["original"][:1024] if translation_result["original"] else "*No text content*",
             inline=False
         )
         
-        # Add context information
-        if context:
-            context_preview = "\n".join([
-                f"• **{ctx['user_name']}**: {ctx['content'][:50]}..."
-                for ctx in context[-3:]
-            ])
+        # Add translation
+        translation_text = translation_result["translation"]
+        if translation_text:
+            # Discord embed field limit is 1024 chars
+            if len(translation_text) > 1024:
+                translation_text = translation_text[:1021] + "..."
             embed.add_field(
-                name=f"Context ({len(context)} messages)",
-                value=context_preview[:1024],
+                name="📝 Translation",
+                value=translation_text,
                 inline=False
             )
         
-        # Add placeholder notice
-        embed.add_field(
-            name="Status",
-            value="🔄 Translation engine will be integrated in Task 4\n"
-                  "Context has been retrieved and filtered (placeholder).",
-            inline=False
-        )
+        # Add context/term explanation if available and not empty/"None"
+        context_exp = translation_result.get("context_explanation", "").strip()
+        if context_exp and context_exp.lower() not in ["none", "n/a", "-", "无"]:
+            if len(context_exp) > 1024:
+                context_exp = context_exp[:1021] + "..."
+            embed.add_field(
+                name="📚 Context / Term Explanation",
+                value=context_exp,
+                inline=False
+            )
         
-        # Add footer with requester info
-        if requesting_user:
-            embed.set_footer(text=f"Requested by {requesting_user.display_name}")
+        # Add tone notes if available and not empty/"None"
+        tone_notes = translation_result.get("tone_notes", "").strip()
+        if tone_notes and tone_notes.lower() not in ["none", "n/a", "-", "无"]:
+            if len(tone_notes) > 1024:
+                tone_notes = tone_notes[:1021] + "..."
+            embed.add_field(
+                name="🎭 Tone Notes",
+                value=tone_notes,
+                inline=False
+            )
+        
+        # Add context info footer
+        relevant_ctx = translation_result.get("relevant_context", [])
+        if relevant_ctx:
+            ctx_preview = ", ".join([ctx['user_name'] for ctx in relevant_ctx[-3:]])
+            embed.set_footer(
+                text=f"Requested by {requesting_user.display_name if requesting_user else 'Unknown'} • "
+                     f"Used {len(relevant_ctx)} context messages ({ctx_preview})"
+            )
+        else:
+            embed.set_footer(
+                text=f"Requested by {requesting_user.display_name if requesting_user else 'Unknown'}"
+            )
         
         # Send the response
         await channel.send(embed=embed)
-        print(f"[Bot] Sent translation response for message {message.id}")
+        print(f"[Bot] Sent enhanced translation for message {message.id}")
 
 
 # Create bot instance
 bot = AITranslatorBot()
 
 
-# Simple ping command for health check
 @bot.command(name="ping")
 async def ping(ctx: commands.Context):
     """Check if the bot is alive."""
@@ -299,6 +332,74 @@ async def stats(ctx: commands.Context):
     embed.add_field(name="Latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
     embed.add_field(name="Translation Emoji", value=TRANSLATION_EMOJI, inline=True)
     await ctx.send(embed=embed)
+
+
+@bot.command(name="translate")
+async def translate_command(ctx: commands.Context, *, text: str):
+    """
+    Translate text directly via command.
+    
+    Usage: !translate <text>
+    Or: !translate 翻译为日语: <text>
+    """
+    async with ctx.typing():
+        # Get recent context from the channel
+        from database import get_recent_messages
+        recent_msgs = get_recent_messages(
+            channel_id=str(ctx.channel.id),
+            limit=5
+        )
+        
+        # Filter out the command message itself if present
+        context = [
+            msg for msg in recent_msgs 
+            if msg['msg_id'] != str(ctx.message.id)
+        ]
+        
+        # Perform translation
+        result = await translate_with_context(text, context)
+        
+        if result.get("error"):
+            await ctx.send(f"❌ Translation failed: {result['error']}")
+            return
+        
+        # Create response embed
+        embed = discord.Embed(
+            title="🌐 Translation",
+            color=0x3498db,
+            timestamp=datetime.now()
+        )
+        
+        embed.add_field(
+            name="💬 Original",
+            value=result["original"][:1024],
+            inline=False
+        )
+        
+        if result["translation"]:
+            embed.add_field(
+                name="📝 Translation",
+                value=result["translation"][:1024],
+                inline=False
+            )
+        
+        context_exp = result.get("context_explanation", "").strip()
+        if context_exp and context_exp.lower() not in ["none", "n/a", "-", "无"]:
+            embed.add_field(
+                name="📚 Context / Term Explanation",
+                value=context_exp[:1024],
+                inline=False
+            )
+        
+        tone_notes = result.get("tone_notes", "").strip()
+        if tone_notes and tone_notes.lower() not in ["none", "n/a", "-", "无"]:
+            embed.add_field(
+                name="🎭 Tone Notes",
+                value=tone_notes[:1024],
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
 
 
 def main():
