@@ -16,10 +16,10 @@ import httpx
 
 # Configuration from environment variables
 MIMO_API_KEY = os.getenv("MIMO_API_KEY")
-MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.mi-mo.com/v1")
+MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
 
 # Default model
-DEFAULT_MODEL = "MiMo-V2-Flash"
+DEFAULT_MODEL = os.getenv("MIMO_MODEL", "mimo-v2-flash")
 
 # Language instruction patterns
 LANGUAGE_PATTERNS = [
@@ -134,7 +134,7 @@ def build_context_filter_prompt(
 Your task is to analyze a list of conversation messages and identify which ones are semantically relevant to the target message that needs translation.
 
 Target message to translate:
-"""{target_content}"""
+"{target_content}"
 
 Conversation context (most recent first):
 {context_text}
@@ -209,7 +209,7 @@ Relevant conversation context:
 {lang_instruction}
 
 Message to translate:
-"""{message_content}"""
+"{message_content}"
 {context_section}
 Provide an enhanced translation with the following sections:
 
