@@ -202,7 +202,7 @@ Relevant conversation context:
         lang_name = lang_names.get(target_language, target_language)
         lang_instruction = f"Translate the following message into {lang_name}."
     else:
-        lang_instruction = "Detect the source language and translate into English (or keep as English if already in English)."
+        lang_instruction = "Detect the source language and translate into English (or keep as English if already in English). If the message content starts with a specific translation instruction like '翻译为日语' or 'Translate to Japanese', prioritize and follow that instruction."
     
     prompt = f"""You are an expert translator with deep cultural and linguistic knowledge.
 
