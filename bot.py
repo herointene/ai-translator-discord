@@ -177,6 +177,12 @@ class AITranslatorBot(commands.Bot):
             
             # Get user who triggered the translation
             user = self.get_user(payload.user_id)
+            if not user:
+                try:
+                    user = await self.fetch_user(payload.user_id)
+                except:
+                    user = None
+            
             user_name = user.display_name if user else f"User {payload.user_id}"
             
             print(f"[Bot] Translating message from {message.author.display_name} for {user_name}")
@@ -279,9 +285,8 @@ class AITranslatorBot(commands.Bot):
         if tone_notes and tone_notes.lower() not in ["none", "n/a", "-", "无"]:
             response_text += f"\n**🎭 Tone Notes**\n{tone_notes}\n"
         
-        # Footer
-        footer = f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'}*"
-        response_text += footer
+        # Footer (Simplified, no longer using a heavy separator)
+        response_text += f"\n\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'}*"
         
         # Send the response
         try:
