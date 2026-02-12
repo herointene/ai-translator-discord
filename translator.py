@@ -19,7 +19,7 @@ MIMO_API_KEY = os.getenv("MIMO_API_KEY")
 MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com/v1")
 
 # Default model
-DEFAULT_MODEL = os.getenv("MIMO_MODEL", "mimo-v2-flash")
+DEFAULT_MODEL = os.getenv("MIMO_MODEL", "xiaomi/mimo-v2-flash")
 
 # Language instruction patterns
 LANGUAGE_PATTERNS = [
