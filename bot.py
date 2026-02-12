@@ -54,7 +54,21 @@ class AITranslatorBot(commands.Bot):
     async def setup_hook(self):
         """Called when the bot is starting up."""
         print(f"[Bot] Logged in as {self.user} (ID: {self.user.id})")
+        # Start cleanup task
+        self.loop.create_task(self._periodic_cleanup())
         print("[Bot] AI Translator Bot is ready!")
+
+    async def _periodic_cleanup(self):
+        """Periodically delete old messages from database."""
+        while not self.is_closed():
+            try:
+                # Cleanup every 24 hours, keep 7 days of history
+                print("[Bot] Running database cleanup...")
+                deleted = self.db.delete_old_messages(days=7)
+                print(f"[Bot] Cleaned up {deleted} old messages")
+            except Exception as e:
+                print(f"[Bot] Error during cleanup: {e}")
+            await asyncio.sleep(86400) # 24 hours
     
     async def on_ready(self):
         """Called when the bot has connected to Discord."""
@@ -233,15 +247,23 @@ class AITranslatorBot(commands.Bot):
         requesting_user: Optional[discord.User]
     ):
         """
-        Send translation response.
+        Send translation response in a thread for cleaner interaction.
         """
         # Check for errors
         if translation_result.get("error"):
-            await channel.send(f"❌ **Translation Error**: {translation_result['error']}")
+            await channel.send(f"❌ **Translation Error**: {translation_result['error']}", reference=message)
             return
         
+        # Determine the response title and content
+        # Note: 'translation' key might be renamed to 'response' for non-translation tasks in prompt
+        is_task = "Response" in translation_result.get("translation", "") or \
+                  "Response" in translation_result.get("original", "")
+        
+        title = "📄 **Task Response**" if is_task else "🌐 **Translation**"
+        
         # Prepare content string
-        response_text = f"🌐 **Translation ({message.author.display_name})**\n\n"
+        # We move away from Embeds to avoid the 'quote block' look
+        response_text = f"{title} (Original by {message.author.display_name})\n\n"
         
         translation_text = translation_result["translation"]
         if translation_text:
@@ -258,32 +280,32 @@ class AITranslatorBot(commands.Bot):
             response_text += f"\n**🎭 Tone Notes**\n{tone_notes}\n"
         
         # Footer
-        relevant_ctx = translation_result.get("relevant_context", [])
-        if relevant_ctx:
-            ctx_preview = ", ".join([ctx['user_name'] for ctx in relevant_ctx[-3:]])
-            response_text += f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'} • Used {len(relevant_ctx)} context messages*"
-        else:
-            response_text += f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'}*"
+        footer = f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'}*"
+        response_text += footer
         
         # Send the response
         try:
-            # Try to create a thread for the translation to keep channel clean
-            thread_name = f"Translation: {message.content[:30]}..."
-            # Note: create_thread is for messages, but check if message is already in a thread
+            # Create a thread for the translation to keep channel clean and allow follow-ups
+            # Limit thread name length
+            safe_content = (message.content[:40] + '...') if len(message.content) > 40 else message.content
+            thread_name = f"Translation: {safe_content}".replace("\n", " ")
+            
+            # If we are already in a thread, just send the message
             if isinstance(channel, discord.Thread):
                 await channel.send(response_text)
             else:
+                # Create a public thread attached to the original message
                 thread = await message.create_thread(
                     name=thread_name,
-                    auto_archive_duration=60
+                    auto_archive_duration=60 # Archive after 1 hour of inactivity
                 )
                 await thread.send(response_text)
         except Exception as thread_err:
-            # Fallback to normal message if thread creation fails
+            # Fallback to normal message with reference if thread creation fails (e.g. permission)
             print(f"[Bot] Thread creation failed, falling back: {thread_err}")
-            await channel.send(response_text)
+            await channel.send(response_text, reference=message)
             
-        print(f"[Bot] Sent enhanced translation for message {message.id}")
+        print(f"[Bot] Sent response for message {message.id}")
 
 
 # Create bot instance
