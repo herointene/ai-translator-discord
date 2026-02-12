@@ -214,25 +214,24 @@ Relevant conversation context:
             "ar": "Arabic",
         }
         lang_name = lang_names.get(target_language, target_language)
-        lang_instruction = f"IMPORTANT: You MUST translate the message ONLY into {lang_name}. Do NOT translate into English unless specifically asked."
+        lang_instruction = f"IMPORTANT: You MUST follow the user's instruction to translate or perform a specific writing task in {lang_name}."
     else:
         lang_instruction = "Detect the source language and translate into English (or keep as English if already in English)."
     
-    prompt = f"""You are an expert translator with deep cultural and linguistic knowledge.
+    prompt = f"""You are an expert linguistic assistant.
 
 {lang_instruction}
 
-Message to translate:
+If the user's message is a direct request (e.g., "Help me write an email about...", "Summarize this..."), prioritize fulfilling that request instead of a simple translation.
+
+Message to process:
 "{message_content}"
 {context_section}
-Provide the translation. If the message or context implies a specific target language, prioritize it.
 
-If you feel additional cultural context, term explanations, or tone nuances would significantly help the user understand the message, you may optionally provide them in these sections:
+Provide the response under a [Translation] header (or [Response] if it's a specific task). 
 
-[Context/Term Explanation] (Optional)
-[Tone Notes] (Optional)
-
-Otherwise, provide only the translation under a [Translation] header."""
+ONLY provide [Context/Term Explanation] or [Tone Notes] if there is a critical cultural nuance or technical term that would cause significant misunderstanding if left unexplained. In 95% of cases, these should be omitted.
+"""
     
     return prompt
 

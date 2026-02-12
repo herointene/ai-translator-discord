@@ -25,6 +25,9 @@ from translator import translate_with_context, TranslationError
 # Configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 TRANSLATION_EMOJI = "🌐"
+# Optional: restrict to specific channels (comma-separated IDs)
+ALLOWED_CHANNELS = os.getenv("ALLOWED_CHANNELS", "").split(",")
+ALLOWED_CHANNELS = [c.strip() for c in ALLOWED_CHANNELS if c.strip()]
 
 # Intents configuration
 intents = discord.Intents.default()
@@ -70,6 +73,10 @@ class AITranslatorBot(commands.Bot):
         if message.author.bot:
             return
         
+        # Check if channel is allowed
+        if ALLOWED_CHANNELS and str(message.channel.id) not in ALLOWED_CHANNELS:
+            return
+
         # Save message to database
         await self._save_message_to_db(message)
         
@@ -160,23 +167,25 @@ class AITranslatorBot(commands.Bot):
             
             print(f"[Bot] Translating message from {message.author.display_name} for {user_name}")
             
-            # Step 1: Retrieve raw context from database
-            raw_context = get_relevant_context(str(message.id), limit=10)
-            print(f"[Bot] Retrieved {len(raw_context)} raw context messages")
-            
-            # Step 2: Apply AI-based topic filtering and translation
-            translation_result = await translate_with_context(
-                message.content,
-                raw_context
-            )
-            
-            # Step 3: Send the enhanced translation response
-            await self._send_translation_response(
-                channel, 
-                message, 
-                translation_result, 
-                user
-            )
+            # Show typing status to give user feedback
+            async with channel.typing():
+                # Step 1: Retrieve raw context from database
+                raw_context = get_relevant_context(str(message.id), limit=10)
+                print(f"[Bot] Retrieved {len(raw_context)} raw context messages")
+                
+                # Step 2: Apply AI-based topic filtering and translation
+                translation_result = await translate_with_context(
+                    message.content,
+                    raw_context
+                )
+                
+                # Step 3: Send the enhanced translation response
+                await self._send_translation_response(
+                    channel, 
+                    message, 
+                    translation_result, 
+                    user
+                )
             
         except Exception as e:
             print(f"[Bot] Error handling translation request: {e}")
@@ -224,89 +233,56 @@ class AITranslatorBot(commands.Bot):
         requesting_user: Optional[discord.User]
     ):
         """
-        Send enhanced translation response to the channel.
-        
-        Displays the translation with context explanation and tone analysis.
+        Send translation response.
         """
         # Check for errors
         if translation_result.get("error"):
-            error_embed = discord.Embed(
-                title="❌ Translation Error",
-                description=f"Failed to translate message: {translation_result['error']}",
-                color=0xe74c3c,
-                timestamp=datetime.now()
-            )
-            error_embed.add_field(
-                name="Original Message",
-                value=message.content[:1024] if message.content else "*No text content*",
-                inline=False
-            )
-            await channel.send(embed=error_embed)
+            await channel.send(f"❌ **Translation Error**: {translation_result['error']}")
             return
         
-        # Create the main translation embed
-        embed = discord.Embed(
-            title="🌐 Translation",
-            color=0x3498db,
-            timestamp=datetime.now()
-        )
+        # Prepare content string
+        response_text = f"🌐 **Translation ({message.author.display_name})**\n\n"
         
-        # Add original message info
-        embed.add_field(
-            name=f"💬 Original ({message.author.display_name})",
-            value=translation_result["original"][:1024] if translation_result["original"] else "*No text content*",
-            inline=False
-        )
-        
-        # Add translation
         translation_text = translation_result["translation"]
         if translation_text:
-            # Discord embed field limit is 1024 chars
-            if len(translation_text) > 1024:
-                translation_text = translation_text[:1021] + "..."
-            embed.add_field(
-                name="📝 Translation",
-                value=translation_text,
-                inline=False
-            )
+            response_text += f"{translation_text}\n"
         
-        # Add context/term explanation if available and not empty/"None"
+        # Add context/term explanation only if significant
         context_exp = translation_result.get("context_explanation", "").strip()
         if context_exp and context_exp.lower() not in ["none", "n/a", "-", "无"]:
-            if len(context_exp) > 1024:
-                context_exp = context_exp[:1021] + "..."
-            embed.add_field(
-                name="📚 Context / Term Explanation",
-                value=context_exp,
-                inline=False
-            )
+            response_text += f"\n**📚 Context / Term Explanation**\n{context_exp}\n"
         
-        # Add tone notes if available and not empty/"None"
+        # Add tone notes only if significant
         tone_notes = translation_result.get("tone_notes", "").strip()
         if tone_notes and tone_notes.lower() not in ["none", "n/a", "-", "无"]:
-            if len(tone_notes) > 1024:
-                tone_notes = tone_notes[:1021] + "..."
-            embed.add_field(
-                name="🎭 Tone Notes",
-                value=tone_notes,
-                inline=False
-            )
+            response_text += f"\n**🎭 Tone Notes**\n{tone_notes}\n"
         
-        # Add context info footer
+        # Footer
         relevant_ctx = translation_result.get("relevant_context", [])
         if relevant_ctx:
             ctx_preview = ", ".join([ctx['user_name'] for ctx in relevant_ctx[-3:]])
-            embed.set_footer(
-                text=f"Requested by {requesting_user.display_name if requesting_user else 'Unknown'} • "
-                     f"Used {len(relevant_ctx)} context messages ({ctx_preview})"
-            )
+            response_text += f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'} • Used {len(relevant_ctx)} context messages*"
         else:
-            embed.set_footer(
-                text=f"Requested by {requesting_user.display_name if requesting_user else 'Unknown'}"
-            )
+            response_text += f"\n---\n*Requested by {requesting_user.display_name if requesting_user else 'Unknown'}*"
         
         # Send the response
-        await channel.send(embed=embed)
+        try:
+            # Try to create a thread for the translation to keep channel clean
+            thread_name = f"Translation: {message.content[:30]}..."
+            # Note: create_thread is for messages, but check if message is already in a thread
+            if isinstance(channel, discord.Thread):
+                await channel.send(response_text)
+            else:
+                thread = await message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
+                await thread.send(response_text)
+        except Exception as thread_err:
+            # Fallback to normal message if thread creation fails
+            print(f"[Bot] Thread creation failed, falling back: {thread_err}")
+            await channel.send(response_text)
+            
         print(f"[Bot] Sent enhanced translation for message {message.id}")
 
 
