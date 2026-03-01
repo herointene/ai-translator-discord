@@ -140,6 +140,7 @@ class AITranslatorBot(commands.Bot):
         Uses raw reaction event to catch reactions on messages not in cache.
         """
         emoji_str = str(payload.emoji)
+        print(f"[Debug] Reaction added: {emoji_str}")
         target_lang = None
         
         # Check if it's the default translation emoji
