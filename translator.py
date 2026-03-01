@@ -370,7 +370,8 @@ async def filter_context_with_ai(
 
 async def translate_with_context(
     message_content: str,
-    context_list: List[Dict[str, Any]]
+    context_list: List[Dict[str, Any]],
+    target_lang: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Main translation function with enhanced output.
@@ -383,6 +384,7 @@ async def translate_with_context(
     Args:
         message_content: The message content to translate
         context_list: List of recent context messages from database
+        target_lang: Optional target language code (overrides detection)
         
     Returns:
         Dictionary containing:
@@ -398,7 +400,7 @@ async def translate_with_context(
     result = {
         "original": message_content,
         "cleaned": message_content,
-        "target_language": None,
+        "target_language": target_lang,
         "translation": "",
         "context_explanation": "",
         "tone_notes": "",
@@ -412,14 +414,21 @@ async def translate_with_context(
         filtered_context = await filter_context_with_ai(message_content, context_list)
         result["relevant_context"] = filtered_context
         
-        # Step 2: Detect language instruction
-        cleaned_content, target_lang = detect_language_instruction(message_content)
-        result["cleaned"] = cleaned_content
-        result["target_language"] = target_lang
+        # Step 2: Detect language instruction (only if target_lang not explicitly provided)
+        if not target_lang:
+            cleaned_content, detected_lang = detect_language_instruction(message_content)
+            result["cleaned"] = cleaned_content
+            result["target_language"] = detected_lang
+            target_lang_to_use = detected_lang
+            message_to_translate = cleaned_content
+        else:
+            target_lang_to_use = target_lang
+            message_to_translate = message_content
+            result["cleaned"] = message_content
         
         # Step 3: Build and send translation prompt
-        prompt = build_translation_prompt(cleaned_content, filtered_context, target_lang)
-        print(f"[Translator] Sending translation request...")
+        prompt = build_translation_prompt(message_to_translate, filtered_context, target_lang_to_use)
+        print(f"[Translator] Sending translation request to {target_lang_to_use or 'Auto'}...")
         
         response = await call_mimo_api(prompt, temperature=0.3, max_tokens=2000)
         

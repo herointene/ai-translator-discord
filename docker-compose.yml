@@ -9,8 +9,6 @@ services:
     volumes:
       # Mount the data directory for SQLite database persistence
       - ./data:/app/data
-      # Mount the database file directly to ensure persistence
-      - ./data/messages.db:/app/messages.db
     restart: unless-stopped
     # Ensure the container has proper networking for Discord API
     network_mode: bridge

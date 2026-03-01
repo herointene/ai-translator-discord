@@ -25,6 +25,11 @@ from translator import translate_with_context, TranslationError
 # Configuration from environment variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 TRANSLATION_EMOJI = "🌐"
+FLAG_TO_LANG = {
+    "🇨🇳": "zh",
+    "🇯🇵": "ja",
+    "🇬🇧": "en"
+}
 # Optional: restrict to specific channels (comma-separated IDs)
 ALLOWED_CHANNELS = os.getenv("ALLOWED_CHANNELS", "").split(",")
 ALLOWED_CHANNELS = [c.strip() for c in ALLOWED_CHANNELS if c.strip()]
@@ -130,26 +135,34 @@ class AITranslatorBot(commands.Bot):
     
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """
-        Handle reaction add events - trigger translation on 🌐 emoji.
+        Handle reaction add events - trigger translation on 🌐 or flag emojis.
         
         Uses raw reaction event to catch reactions on messages not in cache.
         """
-        # Check if it's the translation emoji
-        if str(payload.emoji) != TRANSLATION_EMOJI:
+        emoji_str = str(payload.emoji)
+        target_lang = None
+        
+        # Check if it's the default translation emoji
+        if emoji_str == TRANSLATION_EMOJI:
+            target_lang = None # Use auto-detection or default to English
+        # Check if it's a flag emoji for specific language
+        elif emoji_str in FLAG_TO_LANG:
+            target_lang = FLAG_TO_LANG[emoji_str]
+        else:
             return
         
         # Ignore bot's own reactions
         if payload.user_id == self.user.id:
             return
         
-        print(f"[Bot] Translation triggered for message {payload.message_id} by user {payload.user_id}")
+        print(f"[Bot] Translation triggered for message {payload.message_id} by user {payload.user_id} (Target: {target_lang or 'Auto'})")
         
         # Process translation request
-        await self._handle_translation_request(payload)
+        await self._handle_translation_request(payload, target_lang=target_lang)
     
-    async def _handle_translation_request(self, payload: discord.RawReactionActionEvent):
+    async def _handle_translation_request(self, payload: discord.RawReactionActionEvent, target_lang: Optional[str] = None):
         """
-        Handle a translation request triggered by 🌐 reaction.
+        Handle a translation request triggered by reaction.
         
         Steps:
         1. Fetch the message to be translated
@@ -185,7 +198,7 @@ class AITranslatorBot(commands.Bot):
             
             user_name = user.display_name if user else f"User {payload.user_id}"
             
-            print(f"[Bot] Translating message from {message.author.display_name} for {user_name}")
+            print(f"[Bot] Translating message from {message.author.display_name} for {user_name} to {target_lang or 'Auto'}")
             
             # Show typing status to give user feedback
             async with channel.typing():
@@ -196,7 +209,8 @@ class AITranslatorBot(commands.Bot):
                 # Step 2: Apply AI-based topic filtering and translation
                 translation_result = await translate_with_context(
                     message.content,
-                    raw_context
+                    raw_context,
+                    target_lang=target_lang
                 )
                 
                 # Step 3: Send the enhanced translation response
